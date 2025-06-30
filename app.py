@@ -151,7 +151,6 @@ st.write("Note: Today is Monday, June 30, 2025. June 28 and June 29, 2025, were 
 # Date input
 today = datetime.now(ist).date()
 default_date = today - timedelta(days=0)  # Default to June 27, 2025 (Friday)
-
 selected_date = st.date_input("Select a trading day", value=default_date, min_value=today - timedelta(days=365), max_value=today)
 
 # Checkboxes
@@ -461,11 +460,7 @@ if process_button:
                     # Fetch current price for additional conditions
                     current_price = get_current_price_nse(symbol) or get_current_price_yfinance(yf_symbol)
 
-<<<<<<< HEAD
-                    # Check new condition: open near previous close and current price above previous high
-=======
                     # Check open near previous close and current price above previous high
->>>>>>> c0833f6fd4d27cbbbfd9e2314dd74bbe9846e441
                     if current_price is not None and prev_close * 0.998 <= open_price <= prev_close * 1.002 and current_price > prev_high:
                         percentage_to_close = ((open_price - prev_close) / prev_close) * 100
                         open_near_prev_close_cross_high_stocks.append({
@@ -479,26 +474,11 @@ if process_button:
                             'Current Price': round(current_price, 2),
                             'Percentage to Previous Close': round(percentage_to_close, 2)
                         })
-<<<<<<< HEAD
-                        # Update new table
-=======
                         # Update open near previous close table
->>>>>>> c0833f6fd4d27cbbbfd9e2314dd74bbe9846e441
                         with results_container:
                             open_near_prev_close_cross_high_df = pd.DataFrame(open_near_prev_close_cross_high_stocks)
                             open_near_prev_close_cross_high_placeholder.dataframe(open_near_prev_close_cross_high_df)
 
-<<<<<<< HEAD
-                    # Check opened-above-high-near-close condition
-                    if prev_high > prev_close and current_price is not None and open_price > prev_high and prev_close * 0.998 <= current_price <= prev_close * 1.002:
-                        percentage_to_close = ((current_price - prev_close) / prev_close) * 100
-                        opened_above_high_near_close_stocks.append({
-                            'Symbol': symbol,
-                            'Company Name': company_name,
-                            'Industry': industry,
-                            'Previous Trading Day': prev_trading_date,
-                            'Previous High': round(prev_high, 2),
-=======
                     # Check new condition: open near previous close, current price above previous high, and prev high-close <= 0.5%
                     if current_price is not None and prev_close * 0.998 <= open_price <= prev_close * 1.002 and current_price > prev_high and ((prev_high - prev_close) / prev_close) <= 0.005:
                         percentage_to_close = ((open_price - prev_close) / prev_close) * 100
@@ -509,18 +489,10 @@ if process_button:
                             'Selected Trading Day': selected_trading_date,
                             'Open Price': round(open_price, 2),
                             'Previous Trading Day': prev_trading_date,
->>>>>>> c0833f6fd4d27cbbbfd9e2314dd74bbe9846e441
                             'Previous Close': round(prev_close, 2),
                             'Current Price': round(current_price, 2),
                             'Percentage to Previous Close': round(percentage_to_close, 2)
                         })
-<<<<<<< HEAD
-                        # Update opened-above-high-near-close table
-                        with results_container:
-                            opened_above_high_near_close_df = pd.DataFrame(opened_above_high_near_close_stocks)
-                            opened_above_high_near_close_placeholder.dataframe(opened_above_high_near_close_df)
-
-=======
                         # Update new table
                         with results_container:
                             open_near_prev_close_high_within_half_pct_df = pd.DataFrame(open_near_prev_close_high_within_half_pct_stocks)
@@ -544,7 +516,6 @@ if process_button:
                             opened_above_high_near_close_df = pd.DataFrame(opened_above_high_near_close_stocks)
                             opened_above_high_near_close_placeholder.dataframe(opened_above_high_near_close_df)
 
->>>>>>> c0833f6fd4d27cbbbfd9e2314dd74bbe9846e441
                     # Check if open price is within 0.5% above previous high
                     if prev_high <= open_price <= prev_high * 1.005:
                         percentage_above = ((open_price - prev_high) / prev_high) * 100
