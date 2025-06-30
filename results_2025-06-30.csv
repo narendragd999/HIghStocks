@@ -1,4 +1,5 @@
 Symbol,Company Name,Industry,Selected Trading Day,Open Price,Previous Trading Day,Previous High,Previous Close
+<<<<<<< HEAD
 ALIVUS,Alivus Life Sciences Ltd.,Healthcare,2025-06-30,1018.0,2025-06-27,1010.0,1001.3
 ASAHIINDIA,Asahi India Glass Ltd.,Automobile and Auto Components,2025-06-30,741.0,2025-06-27,738.3,733.5
 AUROPHARMA,Aurobindo Pharma Ltd.,Healthcare,2025-06-30,1150.0,2025-06-27,1138.8,1121.0
@@ -9,4 +10,21 @@ GRAVITA,Gravita India Ltd.,Metals & Mining,2025-06-30,1887.0,2025-06-27,1883.5,1
 JYOTHYLAB,Jyothy Labs Ltd.,Fast Moving Consumer Goods,2025-06-30,341.3,2025-06-27,341.0,339.5
 MAZDOCK,Mazagoan Dock Shipbuilders Ltd.,Capital Goods,2025-06-30,3240.0,2025-06-27,3198.7,3174.0
 NEULANDLAB,Neuland Laboratories Ltd.,Healthcare,2025-06-30,12264.0,2025-06-27,12199.0,12120.0
+=======
+APLLTD,Alembic Pharmaceuticals Ltd.,Healthcare,2025-06-30,989.0,2025-06-27,988.5,968.9
+ALKEM,Alkem Laboratories Ltd.,Healthcare,2025-06-30,4930.5,2025-06-27,4920.0,4906.5
+ASAHIINDIA,Asahi India Glass Ltd.,Automobile and Auto Components,2025-06-30,741.0,2025-06-27,738.3,733.5
+CGCL,Capri Global Capital Ltd.,Financial Services,2025-06-30,172.39,2025-06-27,172.24,170.2
+CENTRALBK,Central Bank of India,Financial Services,2025-06-30,39.51,2025-06-27,39.49,39.2
+CERA,Cera Sanitaryware Ltd,Consumer Durables,2025-06-30,6920.0,2025-06-27,6885.0,6816.0
+CRAFTSMAN,Craftsman Automation Ltd.,Automobile and Auto Components,2025-06-30,5538.5,2025-06-27,5520.0,5494.5
+GVT&D,GE Vernova T&D India Ltd.,Capital Goods,2025-06-30,2333.0,2025-06-27,1771.1,1771.1
+ICICIPRULI,ICICI Prudential Life Insurance Company Ltd.,Financial Services,2025-06-30,651.0,2025-06-27,650.35,647.85
+IDBI,IDBI Bank Ltd.,Financial Services,2025-06-30,102.05,2025-06-27,101.85,101.32
+IGIL,International Gemmological Institute (India) Ltd.,Services,2025-06-30,376.1,2025-06-27,374.9,372.7
+MAZDOCK,Mazagoan Dock Shipbuilders Ltd.,Capital Goods,2025-06-30,3240.0,2025-06-27,3198.7,3174.0
+RAYMONDLSL,Raymond Lifestyle Ltd.,Textiles,2025-06-30,1246.0,2025-06-27,1234.5,1222.3
+SBFC,SBFC Finance Ltd.,Financial Services,2025-06-30,111.0,2025-06-27,107.62,106.59
+SAILIFE,Sai Life Sciences Ltd.,Healthcare,2025-06-30,770.0,2025-06-27,768.5,764.45
+>>>>>>> c0833f6fd4d27cbbbfd9e2314dd74bbe9846e441
 ZENTEC,Zen Technologies Ltd.,Capital Goods,2025-06-30,1960.0,2025-06-27,1942.0,1923.9
