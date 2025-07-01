@@ -1,87 +1,47 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
-import requests
 from datetime import datetime, timedelta
 import pytz
 import os
-import time
 
 # Set timezone to IST
 ist = pytz.timezone('Asia/Kolkata')
 
-# NSE headers
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://www.nseindia.com/market-data/equity-derivatives-watch",
-}
-
-# Initialize NSE session
-nse_session = None
-def initialize_nse_session():
-    global nse_session
-    if nse_session is None:
-        nse_session = requests.Session()
-        try:
-            response = nse_session.get("https://www.nseindia.com/", headers=headers)
-            if response.status_code != 200:
-                st.warning(f"Failed to load NSE homepage: {response.status_code}")
-                return False
-            time.sleep(2)
-            response = nse_session.get("https://www.nseindia.com/market-data/equity-derivatives-watch", headers=headers)
-            time.sleep(2)
-            if response.status_code != 200:
-                st.warning(f"Failed to load NSE derivatives page: {response.status_code}")
-                return False
-        except Exception as e:
-            st.error(f"Error initializing NSE session: {e}")
-            return False
-    return True
-
-# Function to fetch current price from NSE
-def get_current_price_nse(ticker):
-    global nse_session
+# Function to fetch current price from yfinance
+def get_current_price_yfinance(symbols):
     try:
-        if nse_session is None and not initialize_nse_session():
+        data = yf.download(symbols, period="1d", threads=True)['Close']
+        if isinstance(data, pd.Series):
+            return data.to_dict()
+        elif isinstance(data, pd.DataFrame):
+            return data.iloc[-1].to_dict()
+        return {}
+    except Exception as e:
+        st.warning(f"Error fetching yfinance current prices: {e}")
+        return {}
+
+# Function to fetch stock data for multiple tickers
+def get_stock_data(symbols, start_date, end_date):
+    try:
+        data = yf.download(symbols, start=start_date, end=end_date + timedelta(days=1), interval="1d", threads=True, group_by='ticker')
+        return data
+    except Exception as e:
+        st.warning(f"Error fetching historical data: {e}")
+        return None
+
+# Function to find the previous trading day
+def get_previous_trading_day(data, symbol, selected_date):
+    if symbol in data:
+        trading_days = data[symbol].index
+        selected_date_str = selected_date.strftime('%Y-%m-%d')
+        if selected_date_str not in trading_days.strftime('%Y-%m-%d'):
             return None
-        quote_url = f"https://www.nseindia.com/api/quote-equity?symbol={ticker}"
-        response = nse_session.get(quote_url, headers=headers)
-        if response.status_code == 200:
-            quote_data = response.json()
-            last_price = quote_data.get('priceInfo', {}).get('lastPrice', 0)
-            if last_price > 0:
-                return last_price
-        return None
-    except Exception as e:
-        st.warning(f"Error fetching NSE current price for {ticker}: {e}")
-        return None
-
-# Function to fetch current price from yfinance (fallback)
-def get_current_price_yfinance(symbol):
-    try:
-        stock = yf.Ticker(symbol)
-        data = stock.history(period="1d")
-        if not data.empty:
-            return data['Close'].iloc[-1]
-        return None
-    except Exception as e:
-        st.warning(f"Error fetching yfinance current price for {symbol}: {e}")
-        return None
-
-# Function to calculate resistance level (highest high over last 30 days)
-def get_resistance_level(symbol, end_date):
-    try:
-        stock = yf.Ticker(symbol)
-        start_date = end_date - timedelta(days=30)
-        data = stock.history(start=start_date, end=end_date + timedelta(days=1), interval="1d")
-        if not data.empty:
-            return data['High'].max()
-        return None
-    except Exception as e:
-        st.warning(f"Error calculating resistance for {symbol}: {e}")
-        return None
+        selected_idx = trading_days.get_loc(selected_date_str)
+        if selected_idx == 0:
+            return None
+        return trading_days[selected_idx - 1].date()
+    return None
 
 # Function to get stock tickers from Nifty500.csv
 def get_stock_tickers():
@@ -99,27 +59,6 @@ def get_stock_tickers():
     except Exception as e:
         st.error(f"Error reading Nifty500.csv: {e}")
         return pd.DataFrame()
-
-# Function to fetch stock data for a given period
-def get_stock_data(symbol, start_date, end_date):
-    try:
-        stock = yf.Ticker(symbol)
-        data = stock.history(start=start_date, end=end_date + timedelta(days=1), interval="1d")
-        return data
-    except Exception as e:
-        st.warning(f"Error fetching historical data for {symbol}: {e}")
-        return None
-
-# Function to find the previous trading day
-def get_previous_trading_day(data, selected_date):
-    trading_days = data.index
-    selected_date_str = selected_date.strftime('%Y-%m-%d')
-    if selected_date_str not in trading_days.strftime('%Y-%m-%d'):
-        return None
-    selected_idx = trading_days.get_loc(selected_date_str)
-    if selected_idx == 0:
-        return None
-    return trading_days[selected_idx - 1].date()
 
 # Function to load results from CSV if it exists
 def load_results_from_csv(date):
@@ -146,17 +85,16 @@ def save_results_to_csv(results, date):
 # Streamlit app
 st.title("NIFTY 500 Stocks: Open Price Above Previous Trading Day's High and Close")
 st.write("Select a trading day and sectors to compare open price with the previous trading day's high and closing prices.")
-st.write("Note: Today is Monday, June 30, 2025. June 28 and June 29, 2025, were non-trading days. Please select a valid trading day.")
+st.write("Note: Today is Tuesday, July 01, 2025, 09:15 AM IST. June 28 and June 29, 2025, were non-trading days. Please select a valid trading day.")
 
 # Date input
 today = datetime.now(ist).date()
-default_date = today - timedelta(days=0)  # Default to June 27, 2025 (Friday)
+default_date = today - timedelta(days=1)  # Default to June 30, 2025 (Monday)
 selected_date = st.date_input("Select a trading day", value=default_date, min_value=today - timedelta(days=365), max_value=today)
 
 # Checkboxes
 force_reprocess = st.checkbox("Force Reprocess (ignore existing results)", value=False)
 filter_current_price = st.checkbox("Filter by Current Price Above Previous High and Close", value=False)
-filter_resistance = st.checkbox("Exclude Stocks Near Resistance (within 2%)", value=False)
 
 # Fetch all tickers and industries
 df_tickers = get_stock_tickers()
@@ -211,13 +149,10 @@ if process_button:
         st.stop()
 
     results = []
-    near_resistance_stocks = []
     near_previous_high_stocks = []
-    resistance_above_3pct_stocks = []
     opened_above_high_near_close_stocks = []
     open_near_prev_close_cross_high_stocks = []
     open_near_prev_close_high_within_half_pct_stocks = []
-    # NEW: Initialize list for the new condition
     open_near_prev_close_high_within_half_pct_low_high_below_1pct_stocks = []
 
     if not force_reprocess and not existing_results.empty:
@@ -231,22 +166,27 @@ if process_button:
                                                                   'Previous Trading Day', 'Previous Close', 'Current Price', 'Percentage to Previous Close'])
         open_near_prev_close_high_within_half_pct_df = pd.DataFrame(columns=['Symbol', 'Company Name', 'Industry', 'Selected Trading Day', 'Open Price', 
                                                                             'Previous Trading Day', 'Previous Close', 'Current Price', 'Percentage to Previous Close'])
-        # NEW: DataFrame for the new condition
         open_near_prev_close_high_within_half_pct_low_high_below_1pct_df = pd.DataFrame(columns=['Symbol', 'Company Name', 'Industry', 'Selected Trading Day', 'Open Price', 
                                                                                                'Previous Trading Day', 'Previous Close', 'Current Price', 'Percentage to Previous Close', 
                                                                                                'Previous Low', 'Previous High', 'Previous Low-High %'])
+        
+        # Fetch current prices for all symbols
+        yf_symbols = [f"{symbol}.NS" for symbol in existing_results['Symbol']]
+        current_prices = get_current_price_yfinance(yf_symbols)
+
         for idx, row in existing_results.iterrows():
+            symbol = row['Symbol']
+            yf_symbol = f"{symbol}.NS"
             open_price = row['Open Price']
             prev_high = row['Previous High']
             prev_close = row['Previous Close']
-            symbol = row['Symbol']
-            yf_symbol = f"{symbol}.NS"
+            
             # Fetch previous day's low for the new condition
             data = get_stock_data(yf_symbol, selected_date - timedelta(days=10), selected_date)
             if data is not None and not data.empty:
-                prev_trading_date = get_previous_trading_day(data, selected_date)
+                prev_trading_date = get_previous_trading_day(data, yf_symbol, selected_date)
                 if prev_trading_date is not None:
-                    prev_data = data.loc[prev_trading_date.strftime('%Y-%m-%d')]
+                    prev_data = data[yf_symbol].loc[prev_trading_date.strftime('%Y-%m-%d')]
                     prev_low = prev_data['Low']
                     prev_high = prev_data['High']
                     low_high_diff_pct = ((prev_high - prev_low) / prev_low) * 100 if prev_low > 0 else float('inf')
@@ -254,6 +194,7 @@ if process_button:
                     low_high_diff_pct = float('inf')
             else:
                 low_high_diff_pct = float('inf')
+
             # Check near-previous-high condition
             if prev_high <= open_price <= prev_high * 1.005:
                 percentage_above = ((open_price - prev_high) / prev_high) * 100
@@ -267,23 +208,23 @@ if process_button:
                     'Previous High': round(prev_high, 2),
                     'Percentage Above Previous High': round(percentage_above, 2)
                 })
+
             # Check opened-above-high-near-close condition
-            if prev_high > prev_close:
-                current_price = get_current_price_nse(symbol) or get_current_price_yfinance(yf_symbol)
-                if current_price is not None and open_price > prev_high and prev_close * 0.998 <= current_price <= prev_close * 1.002:
-                    percentage_to_close = ((current_price - prev_close) / prev_close) * 100
-                    opened_above_high_near_close_stocks.append({
-                        'Symbol': symbol,
-                        'Company Name': row['Company Name'],
-                        'Industry': row['Industry'],
-                        'Previous Trading Day': row['Previous Trading Day'],
-                        'Previous High': round(prev_high, 2),
-                        'Previous Close': round(prev_close, 2),
-                        'Current Price': round(current_price, 2),
-                        'Percentage to Previous Close': round(percentage_to_close, 2)
-                    })
+            current_price = current_prices.get(yf_symbol)
+            if prev_high > prev_close and current_price is not None and open_price > prev_high and prev_close * 0.998 <= current_price <= prev_close * 1.002:
+                percentage_to_close = ((current_price - prev_close) / prev_close) * 100
+                opened_above_high_near_close_stocks.append({
+                    'Symbol': symbol,
+                    'Company Name': row['Company Name'],
+                    'Industry': row['Industry'],
+                    'Previous Trading Day': row['Previous Trading Day'],
+                    'Previous High': round(prev_high, 2),
+                    'Previous Close': round(prev_close, 2),
+                    'Current Price': round(current_price, 2),
+                    'Percentage to Previous Close': round(percentage_to_close, 2)
+                })
+
             # Check open near previous close and current price above previous high
-            current_price = get_current_price_nse(symbol) or get_current_price_yfinance(yf_symbol)
             if current_price is not None and prev_close * 0.998 <= open_price <= prev_close * 1.002 and current_price > prev_high:
                 percentage_to_close = ((open_price - prev_close) / prev_close) * 100
                 open_near_prev_close_cross_high_stocks.append({
@@ -297,6 +238,7 @@ if process_button:
                     'Current Price': round(current_price, 2),
                     'Percentage to Previous Close': round(percentage_to_close, 2)
                 })
+
             # Check condition: open near previous close, current price above previous high, and prev high-close <= 0.5%
             if current_price is not None and prev_close * 0.998 <= open_price <= prev_close * 1.002 and current_price > prev_high and ((prev_high - prev_close) / prev_close) <= 0.005:
                 percentage_to_close = ((open_price - prev_close) / prev_close) * 100
@@ -311,12 +253,13 @@ if process_button:
                     'Current Price': round(current_price, 2),
                     'Percentage to Previous Close': round(percentage_to_close, 2)
                 })
-            # NEW: Check condition: open near previous close, current price above previous high, prev high-close <= 0.5%, and prev low-high < 1%
+
+            # Check condition: open near previous close, current price above previous high, prev high-close <= 0.5%, and prev low-high < 1%
             if (current_price is not None and 
                 prev_close * 0.998 <= open_price <= prev_close * 1.002 and 
                 current_price > prev_high and 
                 ((prev_high - prev_close) / prev_close) <= 0.005 and 
-                low_high_diff_pct < 1.5):
+                low_high_diff_pct < 1):
                 percentage_to_close = ((open_price - prev_close) / prev_close) * 100
                 open_near_prev_close_high_within_half_pct_low_high_below_1pct_stocks.append({
                     'Symbol': symbol,
@@ -333,59 +276,21 @@ if process_button:
                     'Previous Low-High %': round(low_high_diff_pct, 2)
                 })
 
-        if filter_current_price or filter_resistance:
+        if filter_current_price:
             filtered_results = filtered_results.copy()
             filtered_results['Current Price Valid'] = True
-            if filter_resistance:
-                filtered_results['Resistance Valid'] = True
-                near_resistance_df = pd.DataFrame(columns=['Symbol', 'Company Name', 'Industry', 'Current Price', 'Resistance Level', 'Percentage to Resistance'])
-                resistance_above_3pct_df = pd.DataFrame(columns=['Symbol', 'Company Name', 'Industry', 'Selected Trading Day', 'Open Price', 
-                                                                'Previous Trading Day', 'Previous High', 'Previous Close', 'Current Price', 
-                                                                'Resistance Level', 'Percentage to Resistance'])
             for idx, row in filtered_results.iterrows():
                 symbol = row['Symbol']
                 yf_symbol = f"{symbol}.NS"
-                current_price = get_current_price_nse(symbol) or get_current_price_yfinance(yf_symbol)
-                if filter_current_price and (current_price is None or not (current_price > row['Previous High'] and current_price > row['Previous Close'])):
+                current_price = current_prices.get(yf_symbol)
+                if current_price is None or not (current_price > row['Previous High'] and current_price > row['Previous Close']):
                     filtered_results.at[idx, 'Current Price Valid'] = False
-                if filter_resistance and current_price is not None:
-                    resistance = get_resistance_level(yf_symbol, selected_date)
-                    if resistance is not None:
-                        percentage_to_resistance = ((resistance - current_price) / resistance) * 100
-                        if current_price >= resistance * 0.98:
-                            filtered_results.at[idx, 'Resistance Valid'] = False
-                            near_resistance_stocks.append({
-                                'Symbol': symbol,
-                                'Company Name': row['Company Name'],
-                                'Industry': row['Industry'],
-                                'Current Price': round(current_price, 2),
-                                'Resistance Level': round(resistance, 2),
-                                'Percentage to Resistance': round(percentage_to_resistance, 2)
-                            })
-                        elif current_price <= resistance * 0.97:
-                            resistance_above_3pct_stocks.append({
-                                'Symbol': row['Symbol'],
-                                'Company Name': row['Company Name'],
-                                'Industry': row['Industry'],
-                                'Selected Trading Day': row['Selected Trading Day'],
-                                'Open Price': row['Open Price'],
-                                'Previous Trading Day': row['Previous Trading Day'],
-                                'Previous High': row['Previous High'],
-                                'Previous Close': row['Previous Close'],
-                                'Current Price': round(current_price, 2),
-                                'Resistance Level': round(resistance, 2),
-                                'Percentage to Resistance': round(percentage_to_resistance, 2)
-                            })
-            if filter_resistance:
-                near_resistance_df = pd.DataFrame(near_resistance_stocks)
-                filtered_results = filtered_results[filtered_results['Resistance Valid']]
-                resistance_above_3pct_df = pd.DataFrame(resistance_above_3pct_stocks)
-            filtered_results = filtered_results[filtered_results['Current Price Valid']].drop(columns=['Current Price Valid'] + (['Resistance Valid'] if filter_resistance else []))
+            filtered_results = filtered_results[filtered_results['Current Price Valid']].drop(columns=['Current Price Valid'])
+
         near_previous_high_df = pd.DataFrame(near_previous_high_stocks)
         opened_above_high_near_close_df = pd.DataFrame(opened_above_high_near_close_stocks)
         open_near_prev_close_cross_high_df = pd.DataFrame(open_near_prev_close_cross_high_stocks)
         open_near_prev_close_high_within_half_pct_df = pd.DataFrame(open_near_prev_close_high_within_half_pct_stocks)
-        # NEW: Create DataFrame for the new condition
         open_near_prev_close_high_within_half_pct_low_high_below_1pct_df = pd.DataFrame(open_near_prev_close_high_within_half_pct_low_high_below_1pct_stocks)
 
         # Display existing results
@@ -394,14 +299,6 @@ if process_button:
             st.write("Stocks meeting the condition (open > previous high and close):")
             st.dataframe(filtered_results)
             st.write(f"Found {len(filtered_results)} stocks meeting the condition.")
-            if filter_resistance and not near_resistance_df.empty:
-                st.write("Stocks excluded due to being near resistance (within 2%):")
-                st.dataframe(near_resistance_df)
-                st.write(f"Found {len(near_resistance_df)} stocks near resistance.")
-            if filter_resistance and not resistance_above_3pct_df.empty:
-                st.write("Stocks meeting the condition with resistance at least 3% above current price:")
-                st.dataframe(resistance_above_3pct_df)
-                st.write(f"Found {len(resistance_above_3pct_df)} stocks with resistance above 3%.")
             if not near_previous_high_df.empty:
                 st.write("Stocks with open price within 0.5% above previous trading day's high:")
                 st.dataframe(near_previous_high_df)
@@ -418,18 +315,23 @@ if process_button:
                 st.write("Stocks where open price is within 0.2% of previous close, current price is above previous high, and previous high-close difference is not more than 0.5%:")
                 st.dataframe(open_near_prev_close_high_within_half_pct_df)
                 st.write(f"Found {len(open_near_prev_close_high_within_half_pct_df)} stocks meeting this condition.")
-            # NEW: Display the new table
             if not open_near_prev_close_high_within_half_pct_low_high_below_1pct_df.empty:
                 st.write("Stocks where open price is within 0.2% of previous close, current price is above previous high, previous high-close difference is not more than 0.5%, and previous low-high difference is below 1%:")
                 st.dataframe(open_near_prev_close_high_within_half_pct_low_high_below_1pct_df)
                 st.write(f"Found {len(open_near_prev_close_high_within_half_pct_low_high_below_1pct_df)} stocks meeting this condition.")
     else:
-        # Initialize NSE session
-        initialize_nse_session()
-
         # Calculate start date for fetching data
         start_date = selected_date - timedelta(days=10)
         end_date = selected_date
+
+        # Prepare symbols for batch download
+        yf_symbols = [f"{symbol}.NS" for symbol in selected_tickers['Symbol']]
+        
+        # Fetch historical data for all tickers
+        data = get_stock_data(yf_symbols, start_date, end_date)
+        
+        # Fetch current prices
+        current_prices = get_current_price_yfinance(yf_symbols)
 
         # Progress bar and counter
         progress_bar = st.progress(0)
@@ -442,15 +344,6 @@ if process_button:
             results_df = pd.DataFrame(columns=['Symbol', 'Company Name', 'Industry', 'Selected Trading Day', 'Open Price', 
                                              'Previous Trading Day', 'Previous High', 'Previous Close'])
             results_placeholder = st.dataframe(results_df)
-            if filter_resistance:
-                st.write("Stocks near resistance (within 2%, updated on the fly):")
-                near_resistance_df = pd.DataFrame(columns=['Symbol', 'Company Name', 'Industry', 'Current Price', 'Resistance Level', 'Percentage to Resistance'])
-                near_resistance_placeholder = st.dataframe(near_resistance_df)
-                st.write("Stocks meeting the condition with resistance at least 3% above current price (updated on the fly):")
-                resistance_above_3pct_df = pd.DataFrame(columns=['Symbol', 'Company Name', 'Industry', 'Selected Trading Day', 'Open Price', 
-                                                                'Previous Trading Day', 'Previous High', 'Previous Close', 'Current Price', 
-                                                                'Resistance Level', 'Percentage to Resistance'])
-                resistance_above_3pct_placeholder = st.dataframe(resistance_above_3pct_df)
             st.write("Stocks with open price within 0.5% above previous trading day's high (updated on the fly):")
             near_previous_high_df = pd.DataFrame(columns=['Symbol', 'Company Name', 'Industry', 'Selected Trading Day', 'Open Price', 
                                                          'Previous Trading Day', 'Previous High', 'Percentage Above Previous High'])
@@ -467,7 +360,6 @@ if process_button:
             open_near_prev_close_high_within_half_pct_df = pd.DataFrame(columns=['Symbol', 'Company Name', 'Industry', 'Selected Trading Day', 'Open Price', 
                                                                                 'Previous Trading Day', 'Previous Close', 'Current Price', 'Percentage to Previous Close'])
             open_near_prev_close_high_within_half_pct_placeholder = st.dataframe(open_near_prev_close_high_within_half_pct_df)
-            # NEW: Initialize placeholder for the new table
             st.write("Stocks where open price is within 0.2% of previous close, current price is above previous high, previous high-close difference is not more than 0.5%, and previous low-high difference is below 1% (updated on the fly):")
             open_near_prev_close_high_within_half_pct_low_high_below_1pct_df = pd.DataFrame(columns=['Symbol', 'Company Name', 'Industry', 'Selected Trading Day', 'Open Price', 
                                                                                                    'Previous Trading Day', 'Previous Close', 'Current Price', 'Percentage to Previous Close', 
@@ -478,29 +370,24 @@ if process_button:
             symbol = row.Symbol
             company_name = row.Company_Name
             industry = row.Industry
+            yf_symbol = f"{symbol}.NS"
 
             # Update progress bar and counter
             progress_bar.progress((i + 1) / total_tickers)
             progress_text.text(f"Processed {i + 1}/{total_tickers} tickers: {symbol}")
 
-            # Append .NS for yfinance compatibility
-            yf_symbol = f"{symbol}.NS"
-            data = get_stock_data(yf_symbol, start_date, end_date)
-
-            if data is not None and not data.empty:
+            if data is not None and yf_symbol in data:
                 # Find previous trading day
-                prev_trading_date = get_previous_trading_day(data, selected_date)
+                prev_trading_date = get_previous_trading_day(data, yf_symbol, selected_date)
                 if prev_trading_date is None:
                     st.warning(f"No trading data available for {symbol} on {selected_date} or no previous trading day found.")
                     continue
 
                 # Filter data for the selected date
                 selected_date_str = selected_date.strftime('%Y-%m-%d')
-                if selected_date_str in data.index.strftime('%Y-%m-%d'):
-                    selected_data = data.loc[selected_date_str]
-
-                    # Get previous trading day data
-                    prev_data = data.loc[prev_trading_date.strftime('%Y-%m-%d')]
+                if selected_date_str in data[yf_symbol].index.strftime('%Y-%m-%d'):
+                    selected_data = data[yf_symbol].loc[selected_date_str]
+                    prev_data = data[yf_symbol].loc[prev_trading_date.strftime('%Y-%m-%d')]
 
                     # Extract dates
                     selected_trading_date = selected_data.name.date()
@@ -509,11 +396,11 @@ if process_button:
                     open_price = selected_data['Open']
                     prev_high = prev_data['High']
                     prev_close = prev_data['Close']
-                    prev_low = prev_data['Low']  # NEW: Get previous day's low
-                    low_high_diff_pct = ((prev_high - prev_low) / prev_low) * 100 if prev_low > 0 else float('inf')  # NEW: Calculate low-high difference %
+                    prev_low = prev_data['Low']
+                    low_high_diff_pct = ((prev_high - prev_low) / prev_low) * 100 if prev_low > 0 else float('inf')
 
-                    # Fetch current price for additional conditions
-                    current_price = get_current_price_nse(symbol) or get_current_price_yfinance(yf_symbol)
+                    # Fetch current price
+                    current_price = current_prices.get(yf_symbol)
 
                     # Check open near previous close and current price above previous high
                     if current_price is not None and prev_close * 0.998 <= open_price <= prev_close * 1.002 and current_price > prev_high:
@@ -529,7 +416,6 @@ if process_button:
                             'Current Price': round(current_price, 2),
                             'Percentage to Previous Close': round(percentage_to_close, 2)
                         })
-                        # Update open near previous close table
                         with results_container:
                             open_near_prev_close_cross_high_df = pd.DataFrame(open_near_prev_close_cross_high_stocks)
                             open_near_prev_close_cross_high_placeholder.dataframe(open_near_prev_close_cross_high_df)
@@ -548,12 +434,11 @@ if process_button:
                             'Current Price': round(current_price, 2),
                             'Percentage to Previous Close': round(percentage_to_close, 2)
                         })
-                        # Update table
                         with results_container:
                             open_near_prev_close_high_within_half_pct_df = pd.DataFrame(open_near_prev_close_high_within_half_pct_stocks)
                             open_near_prev_close_high_within_half_pct_placeholder.dataframe(open_near_prev_close_high_within_half_pct_df)
 
-                    # NEW: Check condition: open near previous close, current price above previous high, prev high-close <= 0.5%, and prev low-high < 1%
+                    # Check condition: open near previous close, current price above previous high, prev high-close <= 0.5%, and prev low-high < 1%
                     if (current_price is not None and 
                         prev_close * 0.998 <= open_price <= prev_close * 1.002 and 
                         current_price > prev_high and 
@@ -574,7 +459,6 @@ if process_button:
                             'Previous High': round(prev_high, 2),
                             'Previous Low-High %': round(low_high_diff_pct, 2)
                         })
-                        # Update new table
                         with results_container:
                             open_near_prev_close_high_within_half_pct_low_high_below_1pct_df = pd.DataFrame(open_near_prev_close_high_within_half_pct_low_high_below_1pct_stocks)
                             open_near_prev_close_high_within_half_pct_low_high_below_1pct_placeholder.dataframe(open_near_prev_close_high_within_half_pct_low_high_below_1pct_df)
@@ -592,7 +476,6 @@ if process_button:
                             'Current Price': round(current_price, 2),
                             'Percentage to Previous Close': round(percentage_to_close, 2)
                         })
-                        # Update opened-above-high-near-close table
                         with results_container:
                             opened_above_high_near_close_df = pd.DataFrame(opened_above_high_near_close_stocks)
                             opened_above_high_near_close_placeholder.dataframe(opened_above_high_near_close_df)
@@ -610,54 +493,15 @@ if process_button:
                             'Previous High': round(prev_high, 2),
                             'Percentage Above Previous High': round(percentage_above, 2)
                         })
-                        # Update near-previous-high table
                         with results_container:
                             near_previous_high_df = pd.DataFrame(near_previous_high_stocks)
                             near_previous_high_placeholder.dataframe(near_previous_high_df)
 
                     # Check if selected day's open is above previous day's high and close
                     if open_price > prev_high and open_price > prev_close:
-                        # Check current price and resistance conditions
                         include_stock = True
                         if filter_current_price and (current_price is None or not (current_price > prev_high and current_price > prev_close)):
                             include_stock = False
-                        if filter_resistance and current_price is not None:
-                            resistance = get_resistance_level(yf_symbol, selected_date)
-                            if resistance is not None:
-                                percentage_to_resistance = ((resistance - current_price) / resistance) * 100
-                                if current_price >= resistance * 0.98:
-                                    include_stock = False
-                                    near_resistance_stocks.append({
-                                        'Symbol': symbol,
-                                        'Company Name': company_name,
-                                        'Industry': industry,
-                                        'Current Price': round(current_price, 2),
-                                        'Resistance Level': round(resistance, 2),
-                                        'Percentage to Resistance': round(percentage_to_resistance, 2)
-                                    })
-                                    # Update near-resistance table
-                                    with results_container:
-                                        near_resistance_df = pd.DataFrame(near_resistance_stocks)
-                                        near_resistance_placeholder.dataframe(near_resistance_df)
-                                elif current_price <= resistance * 0.97:
-                                    resistance_above_3pct_stocks.append({
-                                        'Symbol': symbol,
-                                        'Company Name': company_name,
-                                        'Industry': industry,
-                                        'Selected Trading Day': selected_trading_date,
-                                        'Open Price': round(open_price, 2),
-                                        'Previous Trading Day': prev_trading_date,
-                                        'Previous High': round(prev_high, 2),
-                                        'Previous Close': round(prev_close, 2),
-                                        'Current Price': round(current_price, 2),
-                                        'Resistance Level': round(resistance, 2),
-                                        'Percentage to Resistance': round(percentage_to_resistance, 2)
-                                    })
-                                    # Update resistance-above-3% table
-                                    with results_container:
-                                        resistance_above_3pct_df = pd.DataFrame(resistance_above_3pct_stocks)
-                                        resistance_above_3pct_placeholder.dataframe(resistance_above_3pct_df)
-
                         if include_stock:
                             result = {
                                 'Symbol': symbol,
@@ -670,7 +514,6 @@ if process_button:
                                 'Previous Close': round(prev_close, 2)
                             }
                             results.append(result)
-                            # Update results table
                             with results_container:
                                 results_df = pd.DataFrame(results)
                                 results_placeholder.dataframe(results_df)
@@ -686,14 +529,9 @@ if process_button:
         with results_container:
             if not results:
                 st.info(f"No stocks found where the open price on {selected_date} was above the previous trading day's high and closing prices" + 
-                        (f" and current price is above previous high and close" if filter_current_price else "") + 
-                        (f" and current price is not near resistance" if filter_resistance else "") + ".")
+                        (f" and current price is above previous high and close" if filter_current_price else "") + ".")
             else:
                 st.write(f"Found {len(results)} stocks meeting the condition.")
-            if filter_resistance and near_resistance_stocks:
-                st.write(f"Found {len(near_resistance_stocks)} stocks near resistance.")
-            if filter_resistance and resistance_above_3pct_stocks:
-                st.write(f"Found {len(resistance_above_3pct_stocks)} stocks with resistance at least 3% above current price.")
             if near_previous_high_stocks:
                 st.write(f"Found {len(near_previous_high_stocks)} stocks with open price within 0.5% above previous trading day's high.")
             if opened_above_high_near_close_stocks:
@@ -702,9 +540,8 @@ if process_button:
                 st.write(f"Found {len(open_near_prev_close_cross_high_stocks)} stocks where open price is within 0.2% of previous close and current price is above previous high.")
             if open_near_prev_close_high_within_half_pct_stocks:
                 st.write(f"Found {len(open_near_prev_close_high_within_half_pct_stocks)} stocks where open price is within 0.2% of previous close, current price is above previous high, and previous high-close difference is not more than 0.5%.")
-            # NEW: Display count for the new table
             if open_near_prev_close_high_within_half_pct_low_high_below_1pct_stocks:
                 st.write(f"Found {len(open_near_prev_close_high_within_half_pct_low_high_below_1pct_stocks)} stocks where open price is within 0.2% of previous close, current price is above previous high, previous high-close difference is not more than 0.5%, and previous low-high difference is below 1%.")
 
 # Footer
-st.write("Data sourced from NSE and yfinance. Note: Market data is subject to delays and availability.")
+st.write("Data sourced from yfinance. Note: Market data is subject to delays and availability.")
